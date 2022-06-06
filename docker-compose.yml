@@ -1,0 +1,139 @@
+version: '3'
+services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfilephp73
+    image: app
+    restart: unless-stopped
+    tty: true
+    environment:
+      SERVICE_NAME: app
+      SERVICE_TAGS: dev
+    working_dir: /var/www
+    volumes:
+      - ./:/var/www
+      - ./docker/php/local.ini:/usr/local/etc/php/conf.d/local.ini
+    networks:
+      - app-network
+  webserver:
+    image: nginx:alpine
+    restart: unless-stopped
+    tty: true
+    ports:
+      - ${APP_PORT}:80
+    volumes:
+      - ./:/var/www
+      - ./docker/nginx/app.d/:/etc/nginx/conf.d/
+    networks:
+      - app-network
+  # Scheduler
+#  scheduler:
+#    image: app
+#    command: /var/www/docker/work.sh schedule
+#    restart: unless-stopped
+#    working_dir: /var/www
+#    volumes:
+#      - ./app/:/var/www
+#      - ./docker/:/var/www/docker
+#      - ./docker/php/local.ini:/usr/local/etc/php/conf.d/local.ini
+#    networks:
+#      - app-network
+#  #Queue
+  # queue:
+  #   image: app
+  #   command: /var/www/docker/work.sh queue
+  #   restart: unless-stopped
+  #   working_dir: /var/www
+  #   volumes:
+  #     - ./app/:/var/www
+  #     - ./docker/:/var/www/docker
+  #     - ./docker/php/local.ini:/usr/local/etc/php/conf.d/local.ini
+  #   networks:
+  #     - app-network
+  redis:
+    image: redis:alpine
+    command: redis-server --appendonly yes --requirepass "${REDIS_PASSWORD}"
+    volumes:
+      - ./data/redis:/redist-data
+      - ./docker/redis/sysctl.conf:/etc/sysctl.conf
+    # ports:
+      # - "8002:6379"
+    networks:
+      - app-network
+  adminer:
+    image: adminer
+    restart: always
+    ports:
+      - ${MYADMIN_PORT}:8080
+    links:
+      - db
+    depends_on:
+      - db
+    networks:
+      - app-network
+  #MySQL Service
+  db:
+    image: mysql:5.7.22
+    # container_name: db
+    restart: unless-stopped
+    tty: true
+    # ports:
+    #   - "3308:3306"
+    environment:
+      MYSQL_DATABASE: db
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
+      SERVICE_TAGS: dev
+      SERVICE_NAME: mysql
+    volumes:
+      - dbdata:/var/lib/mysql/
+      - ./docker/mysql/my.cnf:/etc/mysql/my.cnf
+    networks:
+      - app-network
+
+  my-mongodb:
+    image: mongo:4.2.3-bionic
+#    container_name: mongodb
+    ports:
+      - 27017:27017
+    environment:
+      - MONGO_INITDB_DATABASE=${MONGO_DB_DATABASE}
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_DB_USERNAME}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_DB_PASSWORD}
+    volumes:
+      # seeding scripts
+      - ./docker/mongo-entrypoint:/docker-entrypoint-initdb.d
+      # named volumes
+      - mongodb:/data/db
+      - mongoconfig:/data/configdb
+    networks:
+      - app-network
+
+#  my-mongoclient:
+#      # build will get tagged with 'image'
+#      build: ./docker/my-mongoclient
+#      image: fabianlee/my-mongoclient:3.9
+#      ports:
+#        - 8832:8832
+##      container_name: my-mongoclient
+#      environment:
+#        - MONGO_SERVER=my-mongodb
+#        - MONGO_INITDB_DATABASE=test
+#        - MONGO_INITDB_ROOT_USERNAME=admin
+#        - MONGO_INITDB_ROOT_PASSWORD=admin
+#      networks:
+#        - app-network
+#      depends_on:
+#        - my-mongodb
+#Docker Networks
+networks:
+  app-network:
+    driver: bridge
+#Volumes
+volumes:
+  dbdata:
+    driver: local
+  mongodb:
+    driver: local
+  mongoconfig:
+    driver: local
